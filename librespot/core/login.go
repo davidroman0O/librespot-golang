@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"log"
+	"os"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/librespot-org/librespot-golang/Spotify"
 	"github.com/librespot-org/librespot-golang/librespot/connection"
 	"github.com/librespot-org/librespot-golang/librespot/discovery"
 	"github.com/librespot-org/librespot-golang/librespot/utils"
-	"log"
 )
 
 var Version = "master"
@@ -150,8 +152,10 @@ func (s *Session) handleLogin() (*Spotify.APWelcome, error) {
 		if err != nil {
 			return nil, fmt.Errorf("authentication failed: %v", err)
 		}
-		fmt.Println("Authentication succeeded: Welcome,", welcome.GetCanonicalUsername())
-		fmt.Println("Blob type:", welcome.GetReusableAuthCredentialsType())
+		if os.Getenv("DEBUG") != "" {
+			fmt.Println("Authentication succeeded: Welcome,", welcome.GetCanonicalUsername())
+			fmt.Println("Blob type:", welcome.GetReusableAuthCredentialsType())
+		}
 		return welcome, nil
 	} else {
 		return nil, fmt.Errorf("authentication failed: unexpected cmd %v", cmd)
