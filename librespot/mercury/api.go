@@ -63,10 +63,29 @@ func (m *Client) GetToken(clientId string, scopes string) (*metadata.Token, erro
 	return token, err
 }
 
-func (m *Client) Search(search string, limit int, country string, username string) (*metadata.SearchResponse, error) {
+// Keep it as history FOR NOW (it's my fork i do the f i want)
+// func (m *Client) Search(search string, limit int, country string, username string) (*metadata.SearchResponse, error) {
+// 	v := url.Values{}
+// 	v.Set("entityVersion", "2")
+// 	v.Set("limit", fmt.Sprintf("%d", limit))
+// 	v.Set("imageSize", "large")
+// 	v.Set("catalogue", "")
+// 	v.Set("country", country)
+// 	v.Set("platform", "zelda")
+// 	v.Set("username", username)
+
+// 	uri := fmt.Sprintf("hm://searchview/km/v4/search/%s?%s", url.QueryEscape(search), v.Encode())
+
+//		result := &metadata.SearchResponse{}
+//		err := m.mercuryGetJson(uri, result)
+//		return result, err
+//	}
+
+func (m *Client) Search(search string, limit int, offset int, country string, username string) (*metadata.SearchResponse, error) {
 	v := url.Values{}
 	v.Set("entityVersion", "2")
 	v.Set("limit", fmt.Sprintf("%d", limit))
+	v.Set("offset", fmt.Sprintf("%d", offset)) // Add offset for pagination
 	v.Set("imageSize", "large")
 	v.Set("catalogue", "")
 	v.Set("country", country)
@@ -80,12 +99,22 @@ func (m *Client) Search(search string, limit int, country string, username strin
 	return result, err
 }
 
-func (m *Client) Suggest(search string) (*metadata.SuggestResult, error) {
-	uri := "hm://searchview/km/v3/suggest/" + url.QueryEscape(search) + "?limit=3&intent=2516516747764520149&sequence=0&catalogue=&country=&locale=&platform=zelda&username="
+func (m *Client) Suggest(search string, limit int, offset int) (*metadata.SuggestResult, error) {
+	uri := fmt.Sprintf("hm://searchview/km/v3/suggest/%s?limit=%d&offset=%d&intent=2516516747764520149&sequence=0&catalogue=&country=&locale=&platform=zelda&username=",
+		url.QueryEscape(search), limit, offset)
+
 	data := m.mercuryGet(uri)
 
 	return parseSuggest(data)
 }
+
+// Keep it as history FOR NOW (it's my fork i do the f i want)
+// func (m *Client) Suggest(search string) (*metadata.SuggestResult, error) {
+// 	uri := "hm://searchview/km/v3/suggest/" + url.QueryEscape(search) + "?limit=3&intent=2516516747764520149&sequence=0&catalogue=&country=&locale=&platform=zelda&username="
+// 	data := m.mercuryGet(uri)
+
+// 	return parseSuggest(data)
+// }
 
 func (m *Client) GetTrack(id string) (*Spotify.Track, error) {
 	uri := "hm://metadata/4/track/" + id
