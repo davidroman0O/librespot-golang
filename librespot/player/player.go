@@ -24,19 +24,25 @@ type Player struct {
 	seqChans    sync.Map
 	nextChan    uint16
 
-	errChn chan error
+	errChn       chan error
+	hadPacketErr bool
 }
 
 func CreatePlayer(conn connection.PacketStream, client *mercury.Client) *Player {
 	return &Player{
-		stream:   conn,
-		mercury:  client,
-		channels: map[uint16]*Channel{},
-		seqChans: sync.Map{},
-		chanLock: sync.Mutex{},
-		nextChan: 0,
-		errChn:   make(chan error),
+		stream:       conn,
+		mercury:      client,
+		channels:     map[uint16]*Channel{},
+		seqChans:     sync.Map{},
+		chanLock:     sync.Mutex{},
+		nextChan:     0,
+		errChn:       make(chan error),
+		hadPacketErr: false,
 	}
+}
+
+func (p *Player) HadPacketError() bool {
+	return p.hadPacketErr
 }
 
 func (p *Player) LoadTrack(file *Spotify.AudioFile, trackId []byte) (*AudioFile, error) {
@@ -107,6 +113,7 @@ func (p *Player) HandleCmd(cmd byte, data []byte) {
 		// fmt.Println("[player] Audio key error!")
 		// fmt.Printf("%x\n", data)
 		p.errChn <- fmt.Errorf("audio key error %x", data)
+		p.hadPacketErr = true
 
 	case cmd == connection.PacketStreamChunkRes:
 		// Audio data response
