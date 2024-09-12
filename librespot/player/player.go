@@ -24,7 +24,6 @@ type Player struct {
 	seqChans    sync.Map
 	nextChan    uint16
 
-	errChn       chan error
 	hadPacketErr bool
 }
 
@@ -36,7 +35,6 @@ func CreatePlayer(conn connection.PacketStream, client *mercury.Client) *Player 
 		seqChans:     sync.Map{},
 		chanLock:     sync.Mutex{},
 		nextChan:     0,
-		errChn:       make(chan error),
 		hadPacketErr: false,
 	}
 }
@@ -112,7 +110,6 @@ func (p *Player) HandleCmd(cmd byte, data []byte) {
 		// Audio key error
 		// fmt.Println("[player] Audio key error!")
 		// fmt.Printf("%x\n", data)
-		p.errChn <- fmt.Errorf("audio key error %x", data)
 		p.hadPacketErr = true
 
 	case cmd == connection.PacketStreamChunkRes:
@@ -134,7 +131,6 @@ func (p *Player) HandleCmd(cmd byte, data []byte) {
 func (p *Player) releaseChannel(channel *Channel) {
 	p.chanLock.Lock()
 	delete(p.channels, channel.num)
-	close(p.errChn)
 	p.chanLock.Unlock()
 	// fmt.Printf("[player] Released channel %d\n", channel.num)
 }
