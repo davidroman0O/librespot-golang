@@ -177,13 +177,13 @@ func sessionFromDiscovery(d *discovery.Discovery) (*Session, error) {
 func (s *Session) doConnect() error {
 	apUrl, err := utils.APResolve()
 	if err != nil {
-		log.Println("Failed to get ap url", err)
+		// log.Println("Failed to get ap url", err)
 		return err
 	}
 
 	s.tcpCon, err = net.Dial("tcp", apUrl)
 	if err != nil {
-		log.Println("Failed to connect:", err)
+		// log.Println("Failed to connect:", err)
 		return err
 	}
 
