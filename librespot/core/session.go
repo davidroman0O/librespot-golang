@@ -100,14 +100,14 @@ func (s *Session) startConnection() error {
 	// Wait and read the hello reply
 	initServerPacket, err := conn.RecvPacket()
 	if err != nil {
-		log.Fatal("Error receving packet for hello: ", err)
+		// log.Fatal("Error receving packet for hello: ", err)
 		return err
 	}
 
 	response := Spotify.APResponseMessage{}
 	err = proto.Unmarshal(initServerPacket[4:], &response)
 	if err != nil {
-		log.Fatal("Failed to unmarshal server hello", err)
+		// log.Fatal("Failed to unmarshal server hello", err)
 		return err
 	}
 
