@@ -234,7 +234,7 @@ func (s *Session) runPollLoop() {
 	for {
 		cmd, data, err := s.stream.RecvPacket()
 		if err != nil {
-			log.Println("Error during RecvPacket: ", err)
+			// log.Println("Error during RecvPacket: ", err)
 
 			if err == io.EOF {
 				// We've been disconnected, reconnect
