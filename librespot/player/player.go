@@ -2,6 +2,7 @@ package player
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"log"
@@ -25,9 +26,13 @@ type Player struct {
 	nextChan    uint16
 
 	hadPacketErr bool
+
+	ctx        context.Context
+	cancelFunc context.CancelFunc
 }
 
 func CreatePlayer(conn connection.PacketStream, client *mercury.Client) *Player {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Player{
 		stream:       conn,
 		mercury:      client,
@@ -36,6 +41,8 @@ func CreatePlayer(conn connection.PacketStream, client *mercury.Client) *Player 
 		chanLock:     sync.Mutex{},
 		nextChan:     0,
 		hadPacketErr: false,
+		ctx:          ctx,
+		cancelFunc:   cancel,
 	}
 }
 
@@ -44,23 +51,68 @@ func (p *Player) HadPacketError() bool {
 }
 
 func (p *Player) LoadTrack(file *Spotify.AudioFile, trackId []byte) (*AudioFile, error) {
-	return p.LoadTrackWithIdAndFormat(file.FileId, file.GetFormat(), trackId)
+	// return p.LoadTrackWithIdAndFormat(file.FileId, file.GetFormat(), trackId)
+	select {
+	case <-p.ctx.Done():
+		return nil, fmt.Errorf("player stopped")
+	default:
+		return p.LoadTrackWithIdAndFormat(file.FileId, file.GetFormat(), trackId)
+	}
 }
 
 func (p *Player) LoadTrackWithIdAndFormat(fileId []byte, format Spotify.AudioFile_Format, trackId []byte) (*AudioFile, error) {
-	// fmt.Printf("[player] Loading track audio key, fileId: %s, trackId: %s\n", utils.ConvertTo62(fileId), utils.ConvertTo62(trackId))
+	select {
+	case <-p.ctx.Done():
+		return nil, fmt.Errorf("player stopped")
+	default:
+		audioFile := newAudioFileWithIdAndFormat(fileId, format, p)
 
-	// Allocate an AudioFile and a channel
-	audioFile := newAudioFileWithIdAndFormat(fileId, format, p)
+		err := audioFile.loadKey(trackId)
+		if err != nil {
+			return nil, err
+		}
 
-	// Start loading the audio key
-	err := audioFile.loadKey(trackId)
+		audioFile.loadChunks()
 
-	// Then start loading the audio itself
-	audioFile.loadChunks()
-
-	return audioFile, err
+		return audioFile, nil
+	}
 }
+
+func (p *Player) Stop() {
+	p.cancelFunc()
+
+	// Cancel all ongoing operations
+	p.chanLock.Lock()
+	for _, channel := range p.channels {
+		p.releaseChannel(channel)
+	}
+	p.chanLock.Unlock()
+
+	// Clear all pending sequences
+	p.seqChans.Range(func(key, value interface{}) bool {
+		ch := value.(chan []byte)
+		close(ch)
+		p.seqChans.Delete(key)
+		return true
+	})
+
+	log.Println("Player stopped")
+}
+
+// func (p *Player) LoadTrackWithIdAndFormat(fileId []byte, format Spotify.AudioFile_Format, trackId []byte) (*AudioFile, error) {
+// 	// fmt.Printf("[player] Loading track audio key, fileId: %s, trackId: %s\n", utils.ConvertTo62(fileId), utils.ConvertTo62(trackId))
+
+// 	// Allocate an AudioFile and a channel
+// 	audioFile := newAudioFileWithIdAndFormat(fileId, format, p)
+
+// 	// Start loading the audio key
+// 	err := audioFile.loadKey(trackId)
+
+// 	// Then start loading the audio itself
+// 	audioFile.loadChunks()
+
+// 	return audioFile, err
+// }
 
 func (p *Player) loadTrackKey(trackId []byte, fileId []byte) ([]byte, error) {
 	seqInt, seq := p.mercury.NextSeqWithInt()
