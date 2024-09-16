@@ -6,7 +6,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/librespot-org/librespot-golang/Spotify"
 	"github.com/librespot-org/librespot-golang/librespot/connection"
@@ -29,6 +31,29 @@ type Player struct {
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
+
+	isRateLimited    bool
+	rateLimitedUntil time.Time
+	rateLimitMutex   sync.RWMutex
+}
+
+func (p *Player) IsRateLimited() bool {
+	p.rateLimitMutex.RLock()
+	defer p.rateLimitMutex.RUnlock()
+	return p.isRateLimited && time.Now().Before(p.rateLimitedUntil)
+}
+
+func (p *Player) setRateLimit(duration time.Duration) {
+	p.rateLimitMutex.Lock()
+	defer p.rateLimitMutex.Unlock()
+	p.isRateLimited = true
+	p.rateLimitedUntil = time.Now().Add(duration)
+}
+
+func (p *Player) clearRateLimit() {
+	p.rateLimitMutex.Lock()
+	defer p.rateLimitMutex.Unlock()
+	p.isRateLimited = false
 }
 
 func CreatePlayer(conn connection.PacketStream, client *mercury.Client) *Player {
@@ -65,15 +90,24 @@ func (p *Player) LoadTrackWithIdAndFormat(fileId []byte, format Spotify.AudioFil
 	case <-p.ctx.Done():
 		return nil, fmt.Errorf("player stopped")
 	default:
-		audioFile := newAudioFileWithIdAndFormat(fileId, format, p)
+		if p.IsRateLimited() {
+			return nil, fmt.Errorf("rate limited, try again after %v", p.rateLimitedUntil)
+		}
 
+		audioFile := newAudioFileWithIdAndFormat(fileId, format, p)
 		err := audioFile.loadKey(trackId)
 		if err != nil {
+			if strings.Contains(err.Error(), "rate limited") {
+				// Assume a default rate limit duration if not specified
+				duration := 60 * time.Second
+				p.setRateLimit(duration)
+				return nil, fmt.Errorf("rate limited, try again after %v", duration)
+			}
 			return nil, err
 		}
 
 		audioFile.loadChunks()
-
+		p.clearRateLimit() // Clear rate limit after successful load
 		return audioFile, nil
 	}
 }
@@ -114,15 +148,43 @@ func (p *Player) Stop() {
 // 	return audioFile, err
 // }
 
-func (p *Player) loadTrackKey(trackId []byte, fileId []byte) ([]byte, error) {
-	seqInt, seq := p.mercury.NextSeqWithInt()
+// func (p *Player) loadTrackKey(trackId []byte, fileId []byte) ([]byte, error) {
+// 	seqInt, seq := p.mercury.NextSeqWithInt()
 
+// 	p.seqChans.Store(seqInt, make(chan []byte))
+
+// 	req := buildKeyRequest(seq, trackId, fileId)
+// 	err := p.stream.SendPacket(connection.PacketRequestKey, req)
+// 	if err != nil {
+// 		log.Println("Error while sending packet", err)
+// 		return nil, err
+// 	}
+
+// 	channel, _ := p.seqChans.Load(seqInt)
+// 	key := <-channel.(chan []byte)
+// 	p.seqChans.Delete(seqInt)
+
+// 	return key, nil
+// }
+
+func (p *Player) loadTrackKey(trackId []byte, fileId []byte) ([]byte, error) {
+	if p.IsRateLimited() {
+		return nil, fmt.Errorf("rate limited, try again after %v", p.rateLimitedUntil)
+	}
+
+	seqInt, seq := p.mercury.NextSeqWithInt()
 	p.seqChans.Store(seqInt, make(chan []byte))
 
 	req := buildKeyRequest(seq, trackId, fileId)
 	err := p.stream.SendPacket(connection.PacketRequestKey, req)
 	if err != nil {
-		log.Println("Error while sending packet", err)
+		// Check if the error indicates rate limiting
+		if strings.Contains(err.Error(), "rate limited") {
+			// Assume a default rate limit duration if not specified
+			duration := 60 * time.Second
+			p.setRateLimit(duration)
+			return nil, fmt.Errorf("rate limited, try again after %v", duration)
+		}
 		return nil, err
 	}
 
@@ -130,6 +192,7 @@ func (p *Player) loadTrackKey(trackId []byte, fileId []byte) ([]byte, error) {
 	key := <-channel.(chan []byte)
 	p.seqChans.Delete(seqInt)
 
+	p.clearRateLimit() // Clear rate limit after successful request
 	return key, nil
 }
 
