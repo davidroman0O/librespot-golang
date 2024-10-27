@@ -6,11 +6,12 @@ import (
 	"crypto/cipher"
 	"encoding/binary"
 	"fmt"
-	"github.com/librespot-org/librespot-golang/Spotify"
-	"github.com/librespot-org/librespot-golang/librespot/connection"
 	"io"
 	"math"
 	"sync"
+
+	"github.com/librespot-org/librespot-golang/Spotify"
+	"github.com/librespot-org/librespot-golang/librespot/connection"
 )
 
 const kChunkSize = 32768 // In number of words (so actual byte size is kChunkSize*4, aka. kChunkByteSize)
@@ -41,6 +42,7 @@ type AudioFile struct {
 	cursor         int
 	chunks         map[int]bool
 	chunksLoading  bool
+	onChunk        func(int)
 }
 
 func newAudioFile(file *Spotify.AudioFile, player *Player) *AudioFile {
@@ -217,7 +219,8 @@ func (a *AudioFile) loadChunks() {
 	// remaining chunks will be added once we get the headers with the file size.
 	a.chunkLoadOrder = append(a.chunkLoadOrder, 0)
 
-	go a.loadNextChunk()
+	// removed goroutine
+	a.loadNextChunk()
 }
 
 func (a *AudioFile) requestChunk(chunkIndex int) {
@@ -304,6 +307,9 @@ func (a *AudioFile) loadNextChunk() {
 	a.chunksLoading = false
 
 	if len(a.chunkLoadOrder) > 0 {
+		if a.onChunk != nil {
+			a.onChunk(len(a.chunkLoadOrder))
+		}
 		a.chunkLock.Unlock()
 		a.loadNextChunk()
 	} else {

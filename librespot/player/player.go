@@ -85,7 +85,19 @@ func (p *Player) LoadTrack(file *Spotify.AudioFile, trackId []byte) (*AudioFile,
 	}
 }
 
-func (p *Player) LoadTrackWithIdAndFormat(fileId []byte, format Spotify.AudioFile_Format, trackId []byte) (*AudioFile, error) {
+type loadConfig struct {
+	onChunk func(int)
+}
+
+type LoadTrackConfig func(*loadConfig)
+
+func OnChunk(f func(int)) LoadTrackConfig {
+	return func(c *loadConfig) {
+		c.onChunk = f
+	}
+}
+
+func (p *Player) LoadTrackWithIdAndFormat(fileId []byte, format Spotify.AudioFile_Format, trackId []byte, opt ...LoadTrackConfig) (*AudioFile, error) {
 	select {
 	case <-p.ctx.Done():
 		return nil, fmt.Errorf("player stopped")
@@ -94,7 +106,17 @@ func (p *Player) LoadTrackWithIdAndFormat(fileId []byte, format Spotify.AudioFil
 			return nil, fmt.Errorf("rate limited, try again after %v", p.rateLimitedUntil)
 		}
 
+		cfg := &loadConfig{}
+		for _, o := range opt {
+			o(cfg)
+		}
+
 		audioFile := newAudioFileWithIdAndFormat(fileId, format, p)
+
+		if cfg.onChunk != nil {
+			audioFile.onChunk = cfg.onChunk
+		}
+
 		err := audioFile.loadKey(trackId)
 		if err != nil {
 			if strings.Contains(err.Error(), "rate limited") {
