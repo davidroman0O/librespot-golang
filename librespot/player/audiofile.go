@@ -60,6 +60,7 @@ func newAudioFileWithIdAndFormat(fileId []byte, format Spotify.AudioFile_Format,
 		chunks:        map[int]bool{},
 		chunkLock:     sync.RWMutex{},
 		chunksLoading: false,
+		onChunk:       func(int) {},
 	}
 }
 
