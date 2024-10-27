@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -216,29 +217,117 @@ func (p *Player) loadTrackKey(trackId []byte, fileId []byte) ([]byte, error) {
 		return nil, fmt.Errorf("rate limited, try again after %v", p.rateLimitedUntil)
 	}
 
+	// Get sequence number once - this part is not retried
 	seqInt, seq := p.mercury.NextSeqWithInt()
 	p.seqChans.Store(seqInt, make(chan []byte))
+	defer p.seqChans.Delete(seqInt)
 
-	req := buildKeyRequest(seq, trackId, fileId)
-	err := p.stream.SendPacket(connection.PacketRequestKey, req)
-	if err != nil {
-		// Check if the error indicates rate limiting
-		if strings.Contains(err.Error(), "rate limited") {
-			// Assume a default rate limit duration if not specified
-			duration := 60 * time.Second
-			p.setRateLimit(duration)
-			return nil, fmt.Errorf("rate limited, try again after %v", duration)
+	const (
+		maxRetries = 10
+		timeout    = 5 * time.Second
+	)
+
+	var lastErr error
+	for retry := 0; retry < maxRetries; retry++ {
+		if retry > 0 {
+			backoff := time.Duration(math.Pow(2, float64(retry))) * time.Second
+			time.Sleep(backoff)
 		}
-		return nil, err
+
+		// This is the part we want to retry and potentially interrupt
+		resultCh := make(chan struct {
+			key []byte
+			err error
+		}, 1)
+
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					return
+				}
+			}()
+
+			// Send the request
+			req := buildKeyRequest(seq, trackId, fileId)
+			err := p.stream.SendPacket(connection.PacketRequestKey, req)
+			if err != nil {
+				if strings.Contains(err.Error(), "rate limited") {
+					duration := 60 * time.Second
+					p.setRateLimit(duration)
+					resultCh <- struct {
+						key []byte
+						err error
+					}{nil, fmt.Errorf("rate limited, try again after %v", duration)}
+					return
+				}
+				resultCh <- struct {
+					key []byte
+					err error
+				}{nil, err}
+				return
+			}
+
+			// fmt.Println("Waiting for audio key")
+
+			// Try to receive the key
+			channel, _ := p.seqChans.Load(seqInt)
+			select {
+			case key := <-channel.(chan []byte):
+				resultCh <- struct {
+					key []byte
+					err error
+				}{key: key, err: nil}
+			case <-time.After(timeout - 100*time.Millisecond):
+				panic("forced timeout waiting for key")
+			}
+		}()
+
+		// Wait for result or timeout
+		select {
+		case result := <-resultCh:
+			if result.err != nil {
+				lastErr = result.err
+				continue // Try next iteration
+			}
+			p.clearRateLimit()
+			return result.key, nil
+		case <-time.After(timeout):
+			lastErr = fmt.Errorf("timeout waiting for audio key after %v", timeout)
+			continue // Try next iteration
+		}
 	}
 
-	channel, _ := p.seqChans.Load(seqInt)
-	key := <-channel.(chan []byte)
-	p.seqChans.Delete(seqInt)
-
-	p.clearRateLimit() // Clear rate limit after successful request
-	return key, nil
+	return nil, fmt.Errorf("failed after %d retries: %v", maxRetries, lastErr)
 }
+
+// func (p *Player) loadTrackKey(trackId []byte, fileId []byte) ([]byte, error) {
+// 	if p.IsRateLimited() {
+// 		return nil, fmt.Errorf("rate limited, try again after %v", p.rateLimitedUntil)
+// 	}
+
+// 	seqInt, seq := p.mercury.NextSeqWithInt()
+// 	p.seqChans.Store(seqInt, make(chan []byte))
+
+// 	req := buildKeyRequest(seq, trackId, fileId)
+// 	err := p.stream.SendPacket(connection.PacketRequestKey, req)
+// 	if err != nil {
+// 		// Check if the error indicates rate limiting
+// 		if strings.Contains(err.Error(), "rate limited") {
+// 			// Assume a default rate limit duration if not specified
+// 			duration := 60 * time.Second
+// 			p.setRateLimit(duration)
+// 			return nil, fmt.Errorf("rate limited, try again after %v", duration)
+// 		}
+// 		return nil, err
+// 	}
+
+// 	channel, _ := p.seqChans.Load(seqInt)
+// 	key := <-channel.(chan []byte)
+// 	p.seqChans.Delete(seqInt)
+
+// 	p.clearRateLimit() // Clear rate limit after successful request
+// 	return key, nil
+// }
 
 func (p *Player) AllocateChannel() *Channel {
 	p.chanLock.Lock()
