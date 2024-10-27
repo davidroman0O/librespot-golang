@@ -71,6 +71,28 @@ func CreatePlayer(conn connection.PacketStream, client *mercury.Client) *Player 
 	}
 }
 
+func (p *Player) Reset() {
+	// newPlayer := CreatePlayer(p.stream, p.mercury)
+	// // assign the value of newPlayer to p
+	// *p = *newPlayer
+
+	// Cancel all ongoing operations
+	p.chanLock.Lock()
+	for _, channel := range p.channels {
+		p.releaseChannel(channel)
+	}
+	p.chanLock.Unlock()
+
+	// Clear all pending sequences
+	p.seqChans.Range(func(key, value interface{}) bool {
+		ch := value.(chan []byte)
+		close(ch)
+		p.seqChans.Delete(key)
+		return true
+	})
+
+}
+
 func (p *Player) HadPacketError() bool {
 	return p.hadPacketErr
 }
