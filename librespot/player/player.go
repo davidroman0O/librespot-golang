@@ -78,11 +78,11 @@ func (p *Player) Reset() {
 	// *p = *newPlayer
 
 	// Cancel all ongoing operations
-	p.chanLock.Lock()
+	// p.chanLock.Lock()
 	for _, channel := range p.channels {
 		p.releaseChannel(channel)
 	}
-	p.chanLock.Unlock()
+	// p.chanLock.Unlock()
 
 	// Clear all pending sequences
 	p.seqChans.Range(func(key, value interface{}) bool {
