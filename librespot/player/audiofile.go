@@ -211,7 +211,7 @@ func (a *AudioFile) totalChunks() int {
 	return int(math.Ceil(float64(size) / float64(kChunkSize) / 4.0))
 }
 
-func (a *AudioFile) loadChunks() {
+func (a *AudioFile) loadChunks() chan struct{} {
 	// By default, we will load the track in the normal order. If we need to skip to a specific piece of audio,
 	// we will prepend the chunks needed so that we load them as soon as possible. Since loadNextChunk will check
 	// if a chunk is already loaded (using hasChunk), we won't be downloading the same chunk multiple times.
@@ -220,8 +220,15 @@ func (a *AudioFile) loadChunks() {
 	// remaining chunks will be added once we get the headers with the file size.
 	a.chunkLoadOrder = append(a.chunkLoadOrder, 0)
 
+	chn := make(chan struct{})
+
 	// removed goroutine
-	a.loadNextChunk()
+	go func() {
+		a.loadNextChunk()
+		close(chn)
+	}()
+
+	return chn
 }
 
 func (a *AudioFile) requestChunk(chunkIndex int) {

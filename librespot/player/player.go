@@ -104,7 +104,7 @@ func (p *Player) LoadTrack(file *Spotify.AudioFile, trackId []byte) (*AudioFile,
 	case <-p.ctx.Done():
 		return nil, fmt.Errorf("player stopped")
 	default:
-		return p.LoadTrackWithIdAndFormat(file.FileId, file.GetFormat(), trackId)
+		return p.LoadTrackWithIdAndFormat(p.ctx, file.FileId, file.GetFormat(), trackId)
 	}
 }
 
@@ -120,7 +120,7 @@ func OnChunk(f func(int)) LoadTrackConfig {
 	}
 }
 
-func (p *Player) LoadTrackWithIdAndFormat(fileId []byte, format Spotify.AudioFile_Format, trackId []byte, opt ...LoadTrackConfig) (*AudioFile, error) {
+func (p *Player) LoadTrackWithIdAndFormat(ctx context.Context, fileId []byte, format Spotify.AudioFile_Format, trackId []byte, opt ...LoadTrackConfig) (*AudioFile, error) {
 	select {
 	case <-p.ctx.Done():
 		return nil, fmt.Errorf("player stopped")
@@ -151,7 +151,15 @@ func (p *Player) LoadTrackWithIdAndFormat(fileId []byte, format Spotify.AudioFil
 			return nil, err
 		}
 
-		audioFile.loadChunks()
+		whenDone := audioFile.loadChunks()
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-whenDone:
+			fmt.Println("Audio file loaded")
+		}
+
 		p.clearRateLimit() // Clear rate limit after successful load
 		return audioFile, nil
 	}
