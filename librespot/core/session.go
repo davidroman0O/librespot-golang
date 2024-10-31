@@ -86,6 +86,11 @@ func (s *Session) Country() string {
 	return s.country
 }
 
+func (s *Session) ResetPlayer() {
+	s.player.Stop()
+	s.player = player.CreatePlayer(s.stream, s.mercury)
+}
+
 func (s *Session) startConnection() error {
 	// First, start by performing a plaintext connection and send the Hello message
 	conn := connection.MakePlainConnection(s.tcpCon, s.tcpCon)
