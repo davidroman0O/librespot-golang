@@ -374,7 +374,8 @@ func (p *Player) HandleCmd(cmd byte, data []byte) {
 		if val, ok := p.channels[channel]; ok {
 			val.handlePacket(data[2:])
 		} else {
-			fmt.Printf("Unknown channel!\n")
+			// fmt.Printf("Unknown channel!\n")
+			panic("Unknown channel") // I rather panic
 		}
 	}
 }
