@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -26,6 +27,8 @@ type Player struct {
 	channels    map[uint16]*Channel
 	seqChans    sync.Map
 	nextChan    uint16
+
+	onError func(error)
 
 	hadPacketErr bool
 
@@ -69,6 +72,10 @@ func CreatePlayer(conn connection.PacketStream, client *mercury.Client) *Player 
 		ctx:          ctx,
 		cancelFunc:   cancel,
 	}
+}
+
+func (p *Player) SetOnError(f func(error)) {
+	p.onError = f
 }
 
 func (p *Player) Reset() {
@@ -374,11 +381,18 @@ func (p *Player) HandleCmd(cmd byte, data []byte) {
 		if val, ok := p.channels[channel]; ok {
 			val.handlePacket(data[2:])
 		} else {
-			// fmt.Printf("Unknown channel!\n")
-			panic("Unknown channel") // I rather panic
+			if p.onError != nil {
+				p.onError(errors.Join(ErrorInvalidChannel, fmt.Errorf("unknown channel %d", channel)))
+			}
+			// TODO: return an error and manage it
+			// panic("Unknown channel") // I rather panic
 		}
 	}
 }
+
+var (
+	ErrorInvalidChannel = fmt.Errorf("invalid channel")
+)
 
 func (p *Player) releaseChannel(channel *Channel) {
 	p.chanLock.Lock()
