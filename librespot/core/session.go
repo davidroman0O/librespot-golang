@@ -52,6 +52,9 @@ type Session struct {
 	reusableAuthBlob []byte
 	// country is the user country returned by the Spotify servers
 	country string
+
+	// force disconnection for good
+	disconnected bool
 }
 
 func (s *Session) Stream() connection.PacketStream {
@@ -196,6 +199,7 @@ func (s *Session) doConnect() error {
 }
 
 func (s *Session) Disconnection() {
+	s.disconnected = true
 	s.disconnect()
 }
 
@@ -235,7 +239,9 @@ func (s *Session) doReconnect() error {
 func (s *Session) planReconnect() {
 	go func() {
 		time.Sleep(1 * time.Second)
-
+		if s.disconnected {
+			return
+		}
 		if err := s.doReconnect(); err != nil {
 			// Try to reconnect again in a second
 			s.planReconnect()
@@ -250,6 +256,10 @@ func (s *Session) runPollLoop() {
 			// log.Println("Error during RecvPacket: ", err)
 
 			if err == io.EOF {
+				if s.disconnected {
+					// close the connection, we force the disconnection
+					return
+				}
 				// We've been disconnected, reconnect
 				s.planReconnect()
 				break
