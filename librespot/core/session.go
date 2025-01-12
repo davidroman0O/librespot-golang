@@ -195,6 +195,14 @@ func (s *Session) doConnect() error {
 	return err
 }
 
+func (s *Session) Disconnection() {
+	s.disconnect()
+}
+
+func (s *Session) Reconnection() error {
+	return s.doReconnect()
+}
+
 func (s *Session) disconnect() {
 	if s.tcpCon != nil {
 		conn := s.tcpCon.(net.Conn)
