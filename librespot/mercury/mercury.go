@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
+	"sync"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/librespot-org/librespot-golang/Spotify"
 	"github.com/librespot-org/librespot-golang/librespot/connection"
-	"io"
-	"sync"
 )
 
 // Mercury is the protocol implementation for Spotify Connect playback control and metadata fetching.It works as a
@@ -49,6 +50,7 @@ type Client struct {
 	callbacks     map[string]Callback
 	internal      *Internal
 	cbMu          sync.Mutex
+	closing       bool
 }
 
 type Connection interface {
@@ -68,6 +70,37 @@ func CreateMercury(stream connection.PacketStream) *Client {
 		},
 	}
 	return client
+}
+
+// will unsubscribe from all subscriptions
+func (c *Client) Close() {
+	c.closing = true
+	for uri := range c.subscriptions {
+		c.Unsubscribe(uri)
+	}
+	for seqKey := range c.callbacks {
+		delete(c.callbacks, seqKey)
+	}
+	for seqKey := range c.internal.pending {
+		delete(c.internal.pending, seqKey)
+	}
+}
+
+func (m *Client) Unsubscribe(uri string) error {
+	chList, ok := m.subscriptions[uri]
+	if !ok {
+		return fmt.Errorf("no subscriptions for uri %s", uri)
+	}
+
+	for _, ch := range chList {
+		close(ch)
+	}
+
+	delete(m.subscriptions, uri)
+	return m.Request(Request{
+		Method: "UNSUB",
+		Uri:    uri,
+	}, nil)
 }
 
 // Subscribe subscribes the specified receiving channel to the specified URI, and calls the callback function
@@ -101,7 +134,12 @@ func (m *Client) addChannelSubscriber(uri string, recv chan Response) {
 	m.subscriptions[uri] = chList
 }
 
+var ErrClosing = fmt.Errorf("client is closing")
+
 func (m *Client) Request(req Request, cb Callback) (err error) {
+	if m.closing {
+		return ErrClosing
+	}
 	seq, err := m.internal.request(req)
 	if err != nil {
 		// Call the callback with a 500 error-code so that the request doesn't remain pending in case of error

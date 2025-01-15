@@ -201,6 +201,15 @@ func (s *Session) doConnect() error {
 func (s *Session) Disconnection() {
 	s.disconnected = true
 	s.disconnect()
+	if s.mercury != nil {
+		s.mercury.Close()
+	}
+	if s.player != nil {
+		s.player.Stop()
+	}
+	if s.discovery != nil {
+		s.discovery.Close()
+	}
 }
 
 func (s *Session) Reconnection() error {
@@ -240,6 +249,7 @@ func (s *Session) planReconnect() {
 	go func() {
 		time.Sleep(1 * time.Second)
 		if s.disconnected {
+			fmt.Println("[planReconnect] disconnected, not reconnecting")
 			return
 		}
 		if err := s.doReconnect(); err != nil {
@@ -251,12 +261,18 @@ func (s *Session) planReconnect() {
 
 func (s *Session) runPollLoop() {
 	for {
+		if s.disconnected {
+			// fmt.Println("[runPollLoop] runpoll disconnected, not reconnecting")
+			// close the connection, we force the disconnection
+			return
+		}
 		cmd, data, err := s.stream.RecvPacket()
 		if err != nil {
 			// log.Println("Error during RecvPacket: ", err)
 
 			if err == io.EOF {
 				if s.disconnected {
+					fmt.Println("[runPollLoop] disconnected, not reconnecting")
 					// close the connection, we force the disconnection
 					return
 				}

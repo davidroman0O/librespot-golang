@@ -68,7 +68,7 @@ func main() {
 		session, err = librespot.LoginSaved(*username, blobBytes, *devicename)
 	} else if os.Getenv("client_secret") != "" {
 		// Authenticate using OAuth (untested)
-		session, err = librespot.LoginOAuth(*devicename, os.Getenv("client_id"), os.Getenv("client_secret"))
+		session, err = librespot.LoginOAuth(*devicename, os.Getenv("client_id"), os.Getenv("client_secret"), func(url string) {})
 	} else {
 		// No valid options, show the helo
 		fmt.Println("need to supply a username and password or a blob file path")
@@ -252,7 +252,7 @@ func funcPlaylists(session *core.Session) {
 }
 
 func funcSearch(session *core.Session, keyword string) {
-	resp, err := session.Mercury().Search(keyword, 12, session.Country(), session.Username())
+	resp, err := session.Mercury().Search(keyword, 12, 0, session.Country(), session.Username())
 
 	if err != nil {
 		fmt.Println("Failed to search:", err)

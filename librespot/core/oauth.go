@@ -1,12 +1,13 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 type OAuth struct {
@@ -58,18 +59,11 @@ func GetOAuthUrl(clientId string) string {
 		"&scope=streaming"
 }
 
-func getOAuthToken(clientId string, clientSecret string) OAuth {
+func getOAuthToken(clientId string, clientSecret string, cb func(url string)) (*OAuth, error) {
 	ch := make(chan OAuth)
+	mux := http.NewServeMux()
 
-	// fmt.Println("go to this url")
-	// urlPath := "https://accounts.spotify.com/authorize?" +
-	// 	"client_id=" + clientId +
-	// 	"&response_type=code" +
-	// 	"&redirect_uri=http://localhost:8888/callback" +
-	// 	"&scope=streaming"
-	// fmt.Println(urlPath)
-
-	http.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		params := r.URL.Query()
 		auth, err := GetOauthAccessToken(params.Get("code"), "http://localhost:8888/callback", clientId, clientSecret)
 		if err != nil {
@@ -80,9 +74,28 @@ func getOAuthToken(clientId string, clientSecret string) OAuth {
 		ch <- *auth
 	})
 
+	server := &http.Server{
+		Addr:    ":8888",
+		Handler: mux,
+	}
+
 	go func() {
-		log.Fatal(http.ListenAndServe(":8888", nil))
+		go func() {
+			<-time.After(time.Second)
+			cb(GetOAuthUrl(clientId))
+		}()
+		// log.Fatal(http.ListenAndServe(":8888", nil))
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("ListenAndServe error: %v\n", err)
+		}
 	}()
 
-	return <-ch
+	oauth := <-ch
+
+	if err := server.Shutdown(context.TODO()); err != nil {
+		fmt.Printf("Shutdown error: %v\n", err)
+		return nil, err
+	}
+
+	return &oauth, nil
 }

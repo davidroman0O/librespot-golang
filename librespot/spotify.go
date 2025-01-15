@@ -34,6 +34,6 @@ func LoginDiscoveryBlobFile(cacheBlobPath string, deviceName string) (*core.Sess
 }
 
 // Login to Spotify using the OAuth method
-func LoginOAuth(deviceName string, clientId string, clientSecret string) (*core.Session, error) {
-	return core.LoginOAuth(deviceName, clientId, clientSecret)
+func LoginOAuth(deviceName string, clientId string, clientSecret string, cb func(url string)) (*core.Session, error) {
+	return core.LoginOAuth(deviceName, clientId, clientSecret, cb)
 }

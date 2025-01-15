@@ -55,3 +55,21 @@ func (p *PlainConnection) RecvPacket() (buf []byte, err error) {
 	}
 	return buf, nil
 }
+
+// try to close the connection
+func (p *PlainConnection) Close() error {
+	p.mutex.Lock()
+	if closer, ok := p.Writer.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			p.mutex.Unlock()
+			return err
+		}
+	}
+	if closer, ok := p.Reader.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			p.mutex.Unlock()
+			return err
+		}
+	}
+	return nil
+}

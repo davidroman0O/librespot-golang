@@ -38,6 +38,8 @@ type Player struct {
 	isRateLimited    bool
 	rateLimitedUntil time.Time
 	rateLimitMutex   sync.RWMutex
+
+	stopped bool
 }
 
 func (p *Player) IsRateLimited() bool {
@@ -171,12 +173,13 @@ func (p *Player) LoadTrackWithIdAndFormat(ctx context.Context, fileId []byte, fo
 func (p *Player) Stop() {
 	p.cancelFunc()
 
+	p.stopped = true
 	// Cancel all ongoing operations
-	// p.chanLock.Lock()
+	p.chanLock.Lock()
 	for _, channel := range p.channels {
-		p.releaseChannel(channel)
+		delete(p.channels, channel.num)
 	}
-	// p.chanLock.Unlock()
+	p.chanLock.Unlock()
 
 	// Clear all pending sequences
 	p.seqChans.Range(func(key, value interface{}) bool {

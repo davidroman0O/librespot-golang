@@ -3,13 +3,14 @@ package spirc
 import (
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/librespot-org/librespot-golang/Spotify"
 	"github.com/librespot-org/librespot-golang/librespot/core"
 	"github.com/librespot-org/librespot-golang/librespot/mercury"
 	"github.com/librespot-org/librespot-golang/librespot/utils"
-	"strings"
-	"sync"
 )
 
 // Controller is a structure for Spotify Connect remote control interface.
@@ -21,6 +22,7 @@ type Controller struct {
 	updateChan  chan Spotify.Frame
 
 	SavedCredentials []byte
+	stopped          bool
 }
 
 // Represents an available Spotify connect device.
@@ -50,9 +52,18 @@ func (c *Controller) LoadTrackIds(ident string, ids string) error {
 	return c.LoadTrack(ident, strings.Split(ids, ","))
 }
 
+func (c *Controller) Close() {
+	c.stopped = true
+}
+
+var ErrClosed = errors.New("controller closed")
+
 // Load given list of tracks on spotify connect device with given
 // ident.  Gids are formated base62 spotify ids.
 func (c *Controller) LoadTrack(ident string, gids []string) error {
+	if c.stopped {
+		return ErrClosed
+	}
 	c.seqNr += 1
 
 	tracks := make([]*Spotify.TrackRef, 0, len(gids))
@@ -86,20 +97,32 @@ func (c *Controller) LoadTrack(ident string, gids []string) error {
 // Sends a 'hello' command to all Spotify Connect devices. Active devices will respond with a 'notify' updating
 // their state.
 func (c *Controller) SendHello() error {
+	if c.stopped {
+		return ErrClosed
+	}
 	return c.sendCmd(nil, Spotify.MessageType_kMessageTypeHello)
 }
 
 // Sends a 'play' command to spotify connect device with given identity (recipient param).
 func (c *Controller) SendPlay(recipient string) error {
+	if c.stopped {
+		return ErrClosed
+	}
 	return c.sendCmd([]string{recipient}, Spotify.MessageType_kMessageTypePlay)
 }
 
 // Sends a 'pause' command to Spotify Connect device with given identity (recipient param).
 func (c *Controller) SendPause(recipient string) error {
+	if c.stopped {
+		return ErrClosed
+	}
 	return c.sendCmd([]string{recipient}, Spotify.MessageType_kMessageTypePause)
 }
 
 func (c *Controller) SendVolume(recipient string, volume int) error {
+	if c.stopped {
+		return ErrClosed
+	}
 	c.seqNr += 1
 	messageType := Spotify.MessageType_kMessageTypeVolume
 	frame := &Spotify.Frame{
@@ -124,6 +147,9 @@ func (c *Controller) ConnectToDevice(address string) {
 // Lists devices on local network advertising spotify connect
 // service (_spotify-connect._tcp.).
 func (c *Controller) ListMdnsDevices() ([]ConnectDevice, error) {
+	if c.stopped {
+		return nil, ErrClosed
+	}
 	discovery := c.session.Discovery()
 	if discovery == nil {
 		return nil, errors.New(
@@ -197,15 +223,20 @@ func (c *Controller) sendCmd(recipient []string, messageType Spotify.MessageType
 
 func (c *Controller) subscribe() {
 	ch := make(chan mercury.Response)
-	c.session.Mercury().Subscribe(fmt.Sprintf("hm://remote/user/%s/", c.session.Username()), ch, func(_ mercury.Response) {
-		go c.run(ch)
-		go c.SendHello()
-	})
+	c.session.Mercury().
+		Subscribe(fmt.Sprintf("hm://remote/user/%s/", c.session.Username()), ch, func(_ mercury.Response) {
+			go c.run(ch)
+			go c.SendHello()
+		})
 }
 
 func (c *Controller) run(ch chan mercury.Response) {
 	for {
 		response := <-ch
+
+		if c.stopped {
+			return
+		}
 
 		frame := &Spotify.Frame{}
 		err := proto.Unmarshal(response.Payload[0], frame)

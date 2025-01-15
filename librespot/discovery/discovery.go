@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/badfortrains/mdns"
 	"log"
 	"math/rand"
 	"net/http"
@@ -14,9 +13,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/badfortrains/mdns"
+
+	"net"
+
 	"github.com/librespot-org/librespot-golang/librespot/crypto"
 	"github.com/librespot-org/librespot-golang/librespot/utils"
-	"net"
 )
 
 // connectInfo stores the information about Spotify Connect connection
@@ -110,6 +112,11 @@ func LoginFromConnect(cachePath string, deviceId string, deviceName string) *Dis
 	<-done
 
 	return &d
+}
+
+func (d *Discovery) Close() {
+	d.mdnsServer.Shutdown()
+	d.httpServer.Close()
 }
 
 func CreateFromBlob(blob utils.BlobInfo, cachePath, deviceId string, deviceName string) *Discovery {
